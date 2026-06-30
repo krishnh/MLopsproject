@@ -48,3 +48,14 @@ jobs:
       # Step 6 - Verify Docker Image Exists
       - name: List Docker Images
         run: docker images
+      # Step 7 - ******Testing Docker Container******
+      - name: Run Docker Container
+        run: |
+          docker run -d --name mlops-app -p 8000:8000 mlops-platform:latest
+
+      - name: Wait for app to start
+        run: sleep 5
+
+      - name: Test Health Endpoint
+        run: |
+          curl --fail http://localhost:8000/health  
