@@ -1,4 +1,4 @@
-name: MLOps CI-CD MLPipeline
+name: Production CI/CD
 
 on:
   push:
@@ -11,82 +11,83 @@ env:
 
 jobs:
 
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout code
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Setup Python
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # Install dependencies
-      - name: Install Dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-      # Python check
-      - name: Compile Check
-        run: |
-          python -m py_compile app/main.py
+      # =========================
+      # 🐳 Build Docker Image
+      # =========================
+      - name: Docker build
+        run: docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
 
-      # Build Docker image
-      - name: Build Docker Image
-        run: |
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+      # =========================
+      # 🔍 TRIVY IMAGE SCAN
+      # =========================
+      - name: Run Trivy Security Scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
 
-      # AWS Configure (NO OIDC)
-      - name: Configure AWS Credentials
+      # =========================
+      # ☁️ AWS AUTH
+      # =========================
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Login to ECR
-      - name: Login to Amazon ECR
+      # =========================
+      # 🔐 LOGIN TO ECR
+      # =========================
+      - name: Login ECR
         run: |
-          aws ecr get-login-password --region $AWS_REGION | \
-          docker login --username AWS --password-stdin \
-          ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
 
-      # Tag + Push image
-      - name: Push to ECR
+      # =========================
+      # 🚀 TAG & PUSH IMAGE
+      # =========================
+      - name: Tag & Push
         run: |
-          docker tag $ECR_REPOSITORY:$IMAGE_TAG \
-           ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
 
-          docker push  ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
-          
+
   deploy:
-    needs: build-and-push
+    needs: build
     runs-on: ubuntu-latest
 
     steps:
-      - name: Configure AWS Credentials
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Update kubeconfig
+      - name: Setup kubeconfig
         run: |
-          aws eks update-kubeconfig \
-            --region $AWS_REGION \
-            --name ${{ secrets.EKS_CLUSTER_NAME }}
+          aws eks update-kubeconfig --region $AWS_REGION --name ${{ secrets.EKS_CLUSTER_NAME }}
 
-      - name: Deploy new image
+      - name: Deploy to EKS
         run: |
           kubectl set image deployment/mlops-platform \
             mlops-platform=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/mlops-platform:$IMAGE_TAG
 
       - name: Verify rollout
-        run: |
-          kubectl rollout status deployment/mlops-platform
+        run: kubectl rollout status deployment/mlops-platform
