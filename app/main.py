@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from app.schemas import PredictionRequest, PredictionResponse
-from app.model import predict_risk
+from app.sagemaker_client import invoke_sagemaker
 
 app = FastAPI(title="Customer Risk API")
 
@@ -13,9 +13,9 @@ def health():
 @app.post("/predict", response_model=PredictionResponse)
 def predict(request: PredictionRequest):
 
-    risk, score = predict_risk(
-        request.age,
-        request.salary
+    risk, score = invoke_sagemaker(
+    age=request.age,
+    salary=request.salary
     )
 
     return PredictionResponse(
