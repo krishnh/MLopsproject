@@ -2,3 +2,5 @@ fastapi
 uvicorn
 pydantic
 boto3
+TensorFlow
+PyTorch

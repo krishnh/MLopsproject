@@ -10,4 +10,7 @@ COPY app/ app/
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+
+#We need to put multistage
+#We need to convert the 8080 ->8000
