@@ -4,3 +4,4 @@ pydantic
 boto3
 TensorFlow
 PyTorch
+PyTorch1
